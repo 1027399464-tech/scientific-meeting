@@ -24,7 +24,7 @@ trigger:
   - 拉取会议纪要
   - 会议转写
   - 查看录制
-version: "3.0.0"
+version: "3.0.1"
 author: 基于一堂「科学开会」课程（认知篇+实操篇上下）× Darwin优化，集成腾讯会议 tmeet CLI
 category: productivity
 tags: [会议管理, 科学开会, 一堂, ROI, 腾讯会议, tmeet, 管理基本功]
@@ -268,6 +268,8 @@ tmeet report participants --meeting-id <id> --compact
 | 备注 | 文本 | 上下文、链接、验收标准 |
 
 **中控台脚本**（零依赖，`scripts/feishu_taskboard.py`，只需 python3 标准库）：
+
+> v3.0.1 修复（2026-08-11）：① token 获取改为直接请求，兼容飞书 token 接口的顶层返回（原经 api_call 嵌套取 data 导致 KeyError）；② 文本/单选字段写入格式由 `{"text":...}`（读取格式）改为纯字符串、日期传毫秒数（原格式导致 TextFieldConvFail/SingleSelectFieldConvFail）。
 
 ```bash
 # 一次性初始化：填表格链接，自动建字段

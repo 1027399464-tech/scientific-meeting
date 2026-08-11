@@ -81,9 +81,24 @@ def get_token(cfg):
         except Exception:
             pass
     body = json.dumps({"app_id": cfg["app_id"], "app_secret": cfg["app_secret"]}).encode()
-    data = api_call("/auth/v3/tenant_access_token/internal", body, need_token=False, no_retry=True)
-    tok = data["tenant_access_token"]
-    expire = data.get("expire", 7200)
+    # 直接请求：飞书该接口把 tenant_access_token 放在响应顶层（非 data 内），兼容两种返回
+    req = urllib.request.Request(
+        API_BASE + "/auth/v3/tenant_access_token/internal",
+        data=body, headers={"Content-Type": "application/json"}, method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            resp = json.loads(r.read().decode())
+    except urllib.error.HTTPError as e:
+        die(f"HTTP {e.code}: {e.read().decode()[:300]}")
+    except urllib.error.URLError as e:
+        die(f"网络错误: {e.reason}")
+    if resp.get("code", 0) != 0:
+        die(f"API 错误 code={resp.get('code')} msg={resp.get('msg')}")
+    tok = resp.get("tenant_access_token") or (resp.get("data") or {}).get("tenant_access_token")
+    expire = resp.get("expire", 7200)
+    if not tok:
+        die(f"无法获取 tenant_access_token: {str(resp)[:200]}")
     with open(TOKEN_CACHE, "w") as f:
         json.dump({"tenant_access_token": tok, "expire_at": now + expire}, f)
     os.chmod(TOKEN_CACHE, 0o600)
@@ -169,19 +184,19 @@ def ms_to_date(ms):
 def build_fields_dict(args, note=None):
     f = {}
     if args.task:
-        f["任务"] = {"text": args.task}
+        f["任务"] = args.task
     if args.owner:
-        f["负责人"] = {"text": args.owner}
+        f["负责人"] = args.owner
     if args.ddl:
         f["DDL"] = date_to_ms(args.ddl)
     if args.status:
-        f["状态"] = {"text": args.status}
+        f["状态"] = args.status
     if args.priority:
-        f["优先级"] = {"text": args.priority}
+        f["优先级"] = args.priority
     if args.source:
-        f["来源会议"] = {"text": args.source}
+        f["来源会议"] = args.source
     if note:
-        f["备注"] = {"text": note}
+        f["备注"] = note
     return f
 
 
@@ -240,17 +255,17 @@ def cmd_batch(args):
         if missing:
             die(f"任务缺少字段 {missing}: {t}")
         body = {"fields": {
-            "任务": {"text": t["task"]},
-            "负责人": {"text": t.get("owner", "")},
-            "来源会议": {"text": t.get("source", "")},
-            "备注": {"text": t.get("note", "")},
+            "任务": t["task"],
+            "负责人": t.get("owner", ""),
+            "来源会议": t.get("source", ""),
+            "备注": t.get("note", ""),
         }}
         if t.get("ddl"):
             body["fields"]["DDL"] = date_to_ms(t["ddl"])
         if t.get("priority"):
-            body["fields"]["优先级"] = {"text": t["priority"]}
+            body["fields"]["优先级"] = t["priority"]
         if t.get("status"):
-            body["fields"]["状态"] = {"text": t["status"]}
+            body["fields"]["状态"] = t["status"]
         api_call(
             f"/bitable/v1/apps/{cfg['app_token']}/tables/{cfg['table_id']}/records",
             json.dumps(body).encode(),
@@ -312,7 +327,7 @@ def cmd_list(args):
 
 def cmd_update(args):
     cfg = load_config()
-    body = {"fields": {"状态": {"text": args.status}}}
+    body = {"fields": {"状态": args.status}}
     api_call(
         f"/bitable/v1/apps/{cfg['app_token']}/tables/{cfg['table_id']}/records/{args.record_id}",
         json.dumps(body).encode(),
